@@ -1,198 +1,151 @@
-<p align = "center">
-<img src="assets/kindle-send-small.png" width="40%">
-</p>
+# kindle-send-auto
 
-<p align = "center">
-<strong>Send blogs, documents, collection of webpages to your kindle</strong>
-</p>
-<h3 align="center">
-<a href="#contribute">Contribute</a>
-<span> · </span>
-<a href="#documentation">Documentation</a>
-<span> · </span>
-<a href="#todo">Todo</a>
-</h3>
+A web UI and browser extension for converting web articles to EPUB for e-readers.
+
+> **Fork of [nikhil1raghav/kindle-send](https://github.com/nikhil1raghav/kindle-send)** — This project extends the original CLI tool with a web interface, cookie-based authentication for paywalled content, and a Chrome extension for queuing URLs while browsing.
 
 ---
 
+## What's New in This Fork
 
-
-
-
-## Documentation
-
-`kindle-send` is a CLI tool to send files and webpages to your e-reader via e-mail. 
-
-Webpages are optimized for viewing on e-reader
-
-
-<p align = "center">
-<figure>
-<img width="90%" src="assets/toepub.png">
-<figcaption>Credits - Netflix tech blog<a href="https://netflixtechblog.com/fixing-performance-regressions-before-they-happen-eab2602b86fe">Fixing Performance Regressions Before they Happen</a></figcaption>
-</figure>
-</p>
-
+| Feature | Description |
+|---------|-------------|
+| **Web UI** | Browser-based interface at `localhost:8080` for converting URLs to EPUB |
+| **Cookie Authentication** | Access paywalled content (Substack, etc.) using your browser session |
+| **Pending Queue** | Save URLs while browsing, convert them later in batch |
+| **Chrome Extension** | One-click add current page to pending queue |
+| **Local-only** | All data stays on your machine — no cloud, no external servers |
 
 ---
 
+## Quick Start
 
-An epub is created from the url, then mailed to the kindle. Amazon converts that epub into azw3 for viewing on kindle.
-So you can use kindle-send, even if you're using a different ereader like Kobo and Remarkable if it supports pushing ebooks via email.
+### 1. Install
 
+```sh
+# Clone and build
+git clone https://github.com/MichaelWalkerHMS/kindle-send-auto.git
+cd kindle-send-auto
+go build -o kindle-send-auto .
+```
 
+### 2. Run the Web UI
+
+```sh
+./kindle-send-auto ui
+```
+
+Open http://localhost:8080 in your browser.
+
+### 3. Install the Chrome Extension (Optional)
+
+1. Go to `chrome://extensions/`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `extension/` folder from this repo
 
 ---
 
-### Installation
+## Features
 
-To run kindle-send you just need the compiled binary, no other dependency is required.
+### Web UI
 
-#### Brew
+Paste URLs (one per line), optionally set a filename, and click **Download** to generate an EPUB.
 
-Kindle-send can be installed via brew
+After conversion:
+- **Open Folder** — Opens the exports directory in your file manager
+- **Send to Kindle** — Opens Amazon's Send to Kindle web page
 
-```sh
-brew install nikhil1raghav/tap/kindle-send
-```
+### Cookie Authentication
 
-#### Download binary
+For paywalled content, add your session cookies in the **Cookie Management** section of the UI:
 
-Download the binary for your operating system and architecture from [release page](https://github.com/nikhil1raghav/kindle-send/releases) and add it to your [PATH](https://en.wikipedia.org/wiki/PATH_(variable)).
-If there is no binary compatible for your system. Please create an issue.
+1. Open DevTools on the site while logged in (F12 → Application → Cookies)
+2. Find the session cookie (e.g., `substack.sid` for Substack, `connect.sid` for custom domains)
+3. Add the domain and cookie in the UI and click **Save Cookies**
 
+Cookies are stored locally in `cookies.json` (git-ignored).
 
-#### Go install
+### Pending Queue & Chrome Extension
 
-If you have golang installed, you can also install kindle-send using
+**While browsing:**
+1. Click the extension icon on any page
+2. Click **Add to Pending**
 
-```sh
-go install github.com/nikhil1raghav/kindle-send@latest
-```
-
-
-For the first time when you run `kindle-send`, you need to answer some questions to create a configuration file, which has options like sender, receiver, password and path to store the generated files.
-
-
-If you're using gmail to send mails to kindle, consider creating an [app password](https://support.google.com/mail/answer/185833?hl=en-GB) and then using it.
-
+**When ready to convert:**
+1. Open the web UI
+2. Click **Load Pending** to fill the URL list
+3. Convert to EPUB
+4. Click **Clear Pending** to archive URLs to `exports/exported.json`
 
 ---
 
+## CLI Commands
 
+The original CLI functionality is preserved:
 
-### Following modes of operation are supported
-
-__1. Send a file__
-
-Using `kindle-send` to mail an already existing file.
-
+### Start Web UI
 ```sh
-kindle-send send Jane-eyre-Autobiography.epub
+kindle-send-auto ui [--port 8080] [--cookies path/to/cookies.json]
 ```
 
-
-<p align="center">
-  <img width="100%" src="assets/sendfile-new.svg">
-</p>
-
-
-__2. Send a webpage__
-
-Quickly send a webpage to kindle
-
-
+### Download Only (No UI)
 ```sh
-kindle-send send http://paulgraham.com/hwh.html
+kindle-send-auto download <url>
+kindle-send-auto download <url1> <url2> <links.txt>
 ```
 
-<p align="center">
-  <img width="100%" src="assets/sendurl-new.svg">
-</p>
-
-
-__3. Multiple webpages combined in a single volume__
-
-
-Create a text file with new line separated links of webpages and then all the webpages mentioned in the file will be bound in a single ebook as chapters and sent to ereader.
-
-
-
+### Send to Kindle (Original Functionality)
 ```sh
-kindle-send send links.txt
+kindle-send-auto send <url>
+kindle-send-auto send <file.epub>
+kindle-send-auto send <links.txt>
 ```
 
-<p align="center">
-  <img width="100%" src="assets/send-link-file-new.svg">
-</p>
-
-
-
-__4. Send Multiple files at once__
-
-You can send multiple files or links at once.
-
-`kindle-send` auto detects the type of file and takes required action.
-
-
-Each argument is sent as a separate file.
-
-
-For example, the command below will send an html page (converted to ebook), an ebook and a collection of bookmarks post downloading the webpages and creating an ebook from them.
-
-
-```sh
-kindle-send send http://paulgraham.com/hwh.html jane-eyre-autobiography.epub some-links.txt
-```
-
-
-
-__5. Download but not send__
-
-If you just want to save a webpage for reading later, replace `send` with `download` and the files will be saved in local directory but will not be sent to an ereader.
-
-Example
-
-```sh
-kindle-send download https://blog.maxgio.me/posts/linux-scheduler-journey/
-```
-
-<p align="center">
-  <img width="100%" src="assets/download-new.svg">
-</p>
-
-
-
-### Additional options
-
-Default timeout for mail is 2 minutes, if you get timeout error while sending bigger files. Increase the timeout using `--mail-timeout <number of seconds>` or `-m` option
-
-
-
-Specify a different configuration file using `--config` or `-c` option. Configuration is stored in home directory as `KindleConfig.json`. You can directly edit it if you want.
-
-
-When sending a collection of pages if no title is provided, volume takes the title of the first page.
-
-You can always get more information about usage of commands and options by typing `kindle-send help`
-
+For send functionality, you'll need to configure email settings on first run.
 
 ---
 
-## Contribute
+## File Structure
 
-Feel free to create an issue and then working on some feature, so that we don't overwrite each other.
+| File | Purpose |
+|------|---------|
+| `cookies.json` | Your session cookies (git-ignored) |
+| `pending.json` | URLs waiting to be converted (git-ignored) |
+| `exports/` | Generated EPUB files |
+| `exports/exported.json` | Archive of converted URLs (git-ignored) |
 
+---
 
-## Todo
+## Development
 
-- [ ] Weekly RSS feed dump, when combined with `cron`
-- [ ] Better CSS & formatting for epub
-- [ ] Compressing images before embedding to reduce final file size
-- [ ] Simple UI form driven by CLI. Something like `kindle-send dashboard`.
-- [x] Auto detect file type
-- [x] Option to download but not send the files
-- [x] Remove dependency on percollate and calibre
-- [x] Make installation easier, add brew and other package managers.
+### Rebuild and Restart
 
+If you have the Claude Code CLI, use the `/dev` command. Otherwise:
 
+```sh
+killall kindle-send-auto 2>/dev/null || true
+go build -o kindle-send-auto .
+./kindle-send-auto ui
+```
+
+---
+
+## Original Project
+
+This is a fork of [kindle-send](https://github.com/nikhil1raghav/kindle-send) by [@nikhil1raghav](https://github.com/nikhil1raghav).
+
+The original project provides:
+- CLI-based URL to EPUB conversion
+- Email delivery to Kindle/e-readers
+- Support for multiple URLs combined into single volumes
+
+See the [original README](https://github.com/nikhil1raghav/kindle-send#readme) for full CLI documentation.
+
+---
+
+## License
+
+This project is licensed under **AGPL-3.0**, the same license as the original project.
+
+See [LICENSE.md](LICENSE.md) for details.
