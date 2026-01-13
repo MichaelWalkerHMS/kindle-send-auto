@@ -2,6 +2,8 @@ package epubgen
 
 import (
 	"errors"
+	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"sync"
@@ -14,6 +16,22 @@ import (
 	"github.com/nikhil1raghav/kindle-send/config"
 	"github.com/nikhil1raghav/kindle-send/util"
 )
+
+// httpClient is used for fetching URLs. Can be set with SetHTTPClient to include cookies.
+var httpClient *http.Client
+
+// SetHTTPClient sets the HTTP client used for fetching URLs.
+// Use this to provide a client with cookies loaded.
+func SetHTTPClient(client *http.Client) {
+	httpClient = client
+}
+
+func getHTTPClient() *http.Client {
+	if httpClient != nil {
+		return httpClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
 
 type epubmaker struct {
 	Epub      *epub.Epub
@@ -28,8 +46,29 @@ func NewEpubmaker(title string) *epubmaker {
 	}
 }
 
-func fetchReadable(url string) (readability.Article, error) {
-	return readability.FromURL(url, 30*time.Second)
+func fetchReadable(pageURL string) (readability.Article, error) {
+	client := getHTTPClient()
+
+	req, err := http.NewRequest("GET", pageURL, nil)
+	if err != nil {
+		return readability.Article{}, err
+	}
+
+	// Set a browser-like User-Agent
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return readability.Article{}, err
+	}
+	defer resp.Body.Close()
+
+	parsedURL, err := url.Parse(pageURL)
+	if err != nil {
+		return readability.Article{}, err
+	}
+
+	return readability.FromReader(resp.Body, parsedURL)
 }
 
 // Point remote image link to downloaded image
@@ -117,8 +156,18 @@ func (e *epubmaker) addContent(articles *[]readability.Article) error {
 	return nil
 }
 
+// Generates a single epub from a slice of urls, saves to specified directory, returns file path
+func MakeToDir(pageUrls []string, title string, outputDir string) (string, error) {
+	return makeEpub(pageUrls, title, outputDir)
+}
+
 // Generates a single epub from a slice of urls, returns file path
 func Make(pageUrls []string, title string) (string, error) {
+	return makeEpub(pageUrls, title, "")
+}
+
+// Internal function that handles epub generation
+func makeEpub(pageUrls []string, title string, outputDir string) (string, error) {
 	//TODO: Parallelize fetching pages
 
 	//Get readable article from urls
@@ -160,14 +209,16 @@ func Make(pageUrls []string, title string) (string, error) {
 		return "", err
 	}
 	var storeDir string
-	if len(config.GetInstance().StorePath) == 0 {
+	if len(outputDir) > 0 {
+		storeDir = outputDir
+	} else if config.GetInstance() != nil && len(config.GetInstance().StorePath) > 0 {
+		storeDir = config.GetInstance().StorePath
+	} else {
 		storeDir, err = os.Getwd()
 		if err != nil {
 			util.Red.Println("Error getting current directory, trying fallback")
 			storeDir = "./"
 		}
-	} else {
-		storeDir = config.GetInstance().StorePath
 	}
 
 	titleSlug := slug.Make(title)

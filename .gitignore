@@ -1,3 +1,5 @@
 dist/
 .idea/
 .vscode/
+exports/*.epub
+cookies.json

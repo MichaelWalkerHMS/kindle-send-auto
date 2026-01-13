@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kindle Send</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            margin-bottom: 8px;
+        }
+        h2 {
+            margin-top: 40px;
+            margin-bottom: 16px;
+            font-size: 18px;
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 24px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #333;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        button {
+            margin-top: 16px;
+            padding: 12px 32px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #545b62;
+        }
+        button.danger {
+            background: #dc3545;
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        button.danger:hover {
+            background: #c82333;
+        }
+        button.small {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 4px;
+            display: none;
+        }
+        #status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+        #status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+        #status.loading {
+            background: #fff3cd;
+            color: #856404;
+            display: block;
+        }
+        .cookie-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .cookie-entry {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+        .cookie-entry:last-child {
+            margin-bottom: 0;
+        }
+        .cookie-domain {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .cookie-domain .domain-input {
+            flex: 1;
+            width: auto;
+            margin-bottom: 0;
+        }
+        .cookie-domain button {
+            margin-top: 0;
+            white-space: nowrap;
+        }
+        .cookie-rows {
+            margin-bottom: 12px;
+        }
+        .cookie-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        .cookie-row:last-child {
+            margin-bottom: 0;
+        }
+        .cookie-row input[type="text"] {
+            margin-bottom: 0;
+            width: auto;
+        }
+        .cookie-row .cookie-name {
+            width: 150px;
+            flex-shrink: 0;
+        }
+        .cookie-row .cookie-value {
+            flex: 1;
+            min-width: 0;
+        }
+        .cookie-row button {
+            margin-top: 0;
+            flex-shrink: 0;
+        }
+        .add-cookie-row {
+            margin-top: 8px;
+        }
+        #cookie-status {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            display: none;
+            font-size: 14px;
+        }
+        #cookie-status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+        #cookie-status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Kindle Send</h1>
+    <p class="subtitle">Paste URLs below (one per line) to convert to EPUB</p>
+
+    <label for="title">File Name (optional)</label>
+    <input type="text" id="title" placeholder="my-ebook">
+
+    <label for="urls">URLs</label>
+    <textarea id="urls" placeholder="https://example.com/article1
+https://example.com/article2
+https://example.com/article3"></textarea>
+
+    <button id="download" onclick="convert()">Download</button>
+
+    <div id="status"></div>
+    <button id="open-folder" style="display: none;" onclick="openFolder()">Open Folder</button>
+    <button id="send-kindle" style="display: none;" onclick="window.open('https://www.amazon.com/sendtokindle', '_blank')">Send to Kindle</button>
+
+    <h2>Cookie Management</h2>
+    <div class="cookie-section">
+        <div id="cookies-list"></div>
+        <button class="secondary small" onclick="addDomain()" style="margin-top: 16px;">+ Add Domain</button>
+        <button class="small" onclick="saveCookies()" style="margin-top: 16px;">Save Cookies</button>
+        <div id="cookie-status"></div>
+    </div>
+
+    <script>
+        let cookieData = {};
+
+        async function loadCookies() {
+            try {
+                const response = await fetch('/cookies');
+                cookieData = await response.json();
+                renderCookies();
+            } catch (err) {
+                console.error('Failed to load cookies:', err);
+            }
+        }
+
+        function renderCookies() {
+            const container = document.getElementById('cookies-list');
+            container.innerHTML = '';
+
+            for (const [domain, cookies] of Object.entries(cookieData)) {
+                const entry = document.createElement('div');
+                entry.className = 'cookie-entry';
+                entry.dataset.domain = domain;
+
+                let cookieRows = '';
+                for (const [name, value] of Object.entries(cookies)) {
+                    cookieRows += `
+                        <div class="cookie-row">
+                            <input type="text" class="cookie-name" value="${escapeHtml(name)}" placeholder="cookie name">
+                            <input type="text" class="cookie-value" value="${escapeHtml(value)}" placeholder="cookie value">
+                            <button class="danger" onclick="removeCookieRow(this)">X</button>
+                        </div>
+                    `;
+                }
+
+                entry.innerHTML = `
+                    <div class="cookie-domain">
+                        <input type="text" value="${escapeHtml(domain)}" class="domain-input" placeholder="domain.com">
+                        <button class="danger" onclick="removeDomain(this)">Remove Domain</button>
+                    </div>
+                    <div class="cookie-rows">${cookieRows}</div>
+                    <button class="secondary small add-cookie-row" onclick="addCookieRow(this)">+ Add Cookie</button>
+                `;
+
+                container.appendChild(entry);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        function addDomain() {
+            const container = document.getElementById('cookies-list');
+            const entry = document.createElement('div');
+            entry.className = 'cookie-entry';
+
+            entry.innerHTML = `
+                <div class="cookie-domain">
+                    <input type="text" value="" class="domain-input" placeholder="domain.com">
+                    <button class="danger" onclick="removeDomain(this)">Remove Domain</button>
+                </div>
+                <div class="cookie-rows">
+                    <div class="cookie-row">
+                        <input type="text" class="cookie-name" value="" placeholder="cookie name">
+                        <input type="text" class="cookie-value" value="" placeholder="cookie value">
+                        <button class="danger" onclick="removeCookieRow(this)">X</button>
+                    </div>
+                </div>
+                <button class="secondary small add-cookie-row" onclick="addCookieRow(this)">+ Add Cookie</button>
+            `;
+
+            container.appendChild(entry);
+        }
+
+        function addCookieRow(button) {
+            const entry = button.closest('.cookie-entry');
+            const rows = entry.querySelector('.cookie-rows');
+            const row = document.createElement('div');
+            row.className = 'cookie-row';
+            row.innerHTML = `
+                <input type="text" class="cookie-name" value="" placeholder="cookie name">
+                <input type="text" class="cookie-value" value="" placeholder="cookie value">
+                <button class="danger" onclick="removeCookieRow(this)">X</button>
+            `;
+            rows.appendChild(row);
+        }
+
+        function removeCookieRow(button) {
+            button.closest('.cookie-row').remove();
+        }
+
+        function removeDomain(button) {
+            button.closest('.cookie-entry').remove();
+        }
+
+        function gatherCookieData() {
+            const entries = document.querySelectorAll('.cookie-entry');
+            const data = {};
+
+            entries.forEach(entry => {
+                const domain = entry.querySelector('.domain-input').value.trim();
+                if (!domain) return;
+
+                const cookies = {};
+                entry.querySelectorAll('.cookie-row').forEach(row => {
+                    const name = row.querySelector('.cookie-name').value.trim();
+                    const value = row.querySelector('.cookie-value').value.trim();
+                    if (name && value) {
+                        cookies[name] = value;
+                    }
+                });
+
+                if (Object.keys(cookies).length > 0) {
+                    data[domain] = cookies;
+                }
+            });
+
+            return data;
+        }
+
+        async function saveCookies() {
+            const status = document.getElementById('cookie-status');
+            const data = gatherCookieData();
+
+            try {
+                const response = await fetch('/cookies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    status.className = 'success';
+                    status.textContent = 'Cookies saved successfully';
+                    cookieData = data;
+                } else {
+                    status.className = 'error';
+                    status.textContent = 'Error: ' + result.error;
+                }
+            } catch (err) {
+                status.className = 'error';
+                status.textContent = 'Failed to save: ' + err.message;
+            }
+
+            setTimeout(() => { status.style.display = 'none'; }, 3000);
+        }
+
+        async function convert() {
+            const titleInput = document.getElementById('title');
+            const textarea = document.getElementById('urls');
+            const button = document.getElementById('download');
+            const status = document.getElementById('status');
+
+            const urls = textarea.value
+                .split('\n')
+                .map(u => u.trim())
+                .filter(u => u.length > 0);
+
+            if (urls.length === 0) {
+                status.className = 'error';
+                status.textContent = 'Please enter at least one URL';
+                return;
+            }
+
+            button.disabled = true;
+            status.className = 'loading';
+            status.textContent = 'Converting... This may take a moment.';
+
+            try {
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        urls: urls,
+                        title: titleInput.value.trim()
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    status.className = 'success';
+                    status.textContent = 'Created: ' + result.filename;
+                    document.getElementById('open-folder').style.display = 'inline-block';
+                    document.getElementById('send-kindle').style.display = 'inline-block';
+                } else {
+                    status.className = 'error';
+                    status.textContent = 'Error: ' + result.error;
+                    document.getElementById('open-folder').style.display = 'none';
+                    document.getElementById('send-kindle').style.display = 'none';
+                }
+            } catch (err) {
+                status.className = 'error';
+                status.textContent = 'Request failed: ' + err.message;
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function openFolder() {
+            try {
+                await fetch('/open-folder', { method: 'POST' });
+            } catch (err) {
+                console.error('Failed to open folder:', err);
+            }
+        }
+
+        // Load cookies on page load
+        loadCookies();
+    </script>
+</body>
+</html>
