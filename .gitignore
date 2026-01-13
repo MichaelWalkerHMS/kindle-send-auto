@@ -2,4 +2,7 @@ dist/
 .idea/
 .vscode/
 exports/*.epub
+exports/exported.json
 cookies.json
+pending.json
+kindle-send-auto

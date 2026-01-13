@@ -19,11 +19,11 @@ killall kindle-send-auto 2>/dev/null || true
 ```
 
 ```bash
-cd /home/michael/projects/kindle-send-auto && go build -o kindle-send-auto .
+go build -o kindle-send-auto .
 ```
 
 ```bash
-cd /home/michael/projects/kindle-send-auto && ./kindle-send-auto ui
+./kindle-send-auto ui
 ```
 
 Server will be available at http://localhost:8080

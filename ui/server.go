@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/nikhil1raghav/kindle-send/cookies"
 	"github.com/nikhil1raghav/kindle-send/epubgen"
@@ -21,6 +22,8 @@ var staticFiles embed.FS
 
 var cookiesFilePath string
 var exportDirPath string
+var pendingFilePath string
+var exportedFilePath string
 
 type convertRequest struct {
 	URLs  []string `json:"urls"`
@@ -38,9 +41,29 @@ type cookieResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type pendingEntry struct {
+	URL     string `json:"url"`
+	AddedAt string `json:"added_at"`
+}
+
+type pendingRequest struct {
+	URL string `json:"url"`
+}
+
+type pendingResponse struct {
+	Success bool           `json:"success"`
+	URLs    []pendingEntry `json:"urls,omitempty"`
+	Error   string         `json:"error,omitempty"`
+}
+
 func StartServer(port int, exportDir string, cookiesFile string) error {
 	cookiesFilePath = cookiesFile
 	exportDirPath = exportDir
+
+	// Set pending and exported file paths
+	cwd, _ := os.Getwd()
+	pendingFilePath = filepath.Join(cwd, "pending.json")
+	exportedFilePath = filepath.Join(exportDir, "exported.json")
 
 	// Ensure export directory exists
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
@@ -57,6 +80,7 @@ func StartServer(port int, exportDir string, cookiesFile string) error {
 	http.HandleFunc("/convert", handleConvert(exportDir))
 	http.HandleFunc("/cookies", handleCookies)
 	http.HandleFunc("/open-folder", handleOpenFolder)
+	http.HandleFunc("/pending", handlePending)
 
 	addr := fmt.Sprintf(":%d", port)
 	util.CyanBold.Printf("Starting server at http://localhost%s\n", addr)
@@ -236,4 +260,158 @@ func handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(cookieResponse{
 		Success: true,
 	})
+}
+
+func handlePending(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	// Allow CORS for the Chrome extension
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// Return pending URLs
+		entries := loadPendingEntries()
+		json.NewEncoder(w).Encode(pendingResponse{
+			Success: true,
+			URLs:    entries,
+		})
+
+	case http.MethodPost:
+		// Add URL to pending
+		var req pendingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			json.NewEncoder(w).Encode(pendingResponse{
+				Success: false,
+				Error:   "Invalid request body",
+			})
+			return
+		}
+
+		if req.URL == "" {
+			json.NewEncoder(w).Encode(pendingResponse{
+				Success: false,
+				Error:   "URL is required",
+			})
+			return
+		}
+
+		entries := loadPendingEntries()
+
+		// Check for duplicate
+		for _, e := range entries {
+			if e.URL == req.URL {
+				json.NewEncoder(w).Encode(pendingResponse{
+					Success: true, // Already exists, consider it success
+					URLs:    entries,
+				})
+				return
+			}
+		}
+
+		entries = append(entries, pendingEntry{
+			URL:     req.URL,
+			AddedAt: time.Now().Format(time.RFC3339),
+		})
+
+		if err := savePendingEntries(entries); err != nil {
+			json.NewEncoder(w).Encode(pendingResponse{
+				Success: false,
+				Error:   "Failed to save: " + err.Error(),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(pendingResponse{
+			Success: true,
+			URLs:    entries,
+		})
+
+	case http.MethodDelete:
+		// Move pending to exported and clear
+		entries := loadPendingEntries()
+
+		if len(entries) > 0 {
+			// Load existing exported entries
+			exportedEntries := loadExportedEntries()
+
+			// Prepend current pending to exported (newest first)
+			exportedEntries = append(entries, exportedEntries...)
+
+			// Save exported
+			if err := saveExportedEntries(exportedEntries); err != nil {
+				json.NewEncoder(w).Encode(pendingResponse{
+					Success: false,
+					Error:   "Failed to archive: " + err.Error(),
+				})
+				return
+			}
+		}
+
+		// Clear pending
+		if err := savePendingEntries([]pendingEntry{}); err != nil {
+			json.NewEncoder(w).Encode(pendingResponse{
+				Success: false,
+				Error:   "Failed to clear pending: " + err.Error(),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(pendingResponse{
+			Success: true,
+			URLs:    []pendingEntry{},
+		})
+
+	default:
+		json.NewEncoder(w).Encode(pendingResponse{
+			Success: false,
+			Error:   "Method not allowed",
+		})
+	}
+}
+
+func loadPendingEntries() []pendingEntry {
+	data, err := os.ReadFile(pendingFilePath)
+	if err != nil {
+		return []pendingEntry{}
+	}
+	var entries []pendingEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return []pendingEntry{}
+	}
+	return entries
+}
+
+func savePendingEntries(entries []pendingEntry) error {
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(pendingFilePath, data, 0644)
+}
+
+func loadExportedEntries() []pendingEntry {
+	data, err := os.ReadFile(exportedFilePath)
+	if err != nil {
+		return []pendingEntry{}
+	}
+	var entries []pendingEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return []pendingEntry{}
+	}
+	return entries
+}
+
+func saveExportedEntries(entries []pendingEntry) error {
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(exportedFilePath, data, 0644)
 }

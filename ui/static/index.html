@@ -205,7 +205,7 @@
     <label for="title">File Name (optional)</label>
     <input type="text" id="title" placeholder="my-ebook">
 
-    <label for="urls">URLs</label>
+    <label for="urls">URLs <button class="small secondary" onclick="loadPending()" style="margin-left: 8px; margin-top: 0;">Load Pending</button></label>
     <textarea id="urls" placeholder="https://example.com/article1
 https://example.com/article2
 https://example.com/article3"></textarea>
@@ -215,6 +215,7 @@ https://example.com/article3"></textarea>
     <div id="status"></div>
     <button id="open-folder" style="display: none;" onclick="openFolder()">Open Folder</button>
     <button id="send-kindle" style="display: none;" onclick="window.open('https://www.amazon.com/sendtokindle', '_blank')">Send to Kindle</button>
+    <button id="clear-pending" class="secondary" style="display: none;" onclick="clearPending()">Clear Pending</button>
 
     <h2>Cookie Management</h2>
     <div class="cookie-section">
@@ -226,6 +227,7 @@ https://example.com/article3"></textarea>
 
     <script>
         let cookieData = {};
+        let loadedFromPending = false;
 
         async function loadCookies() {
             try {
@@ -412,11 +414,15 @@ https://example.com/article3"></textarea>
                     status.textContent = 'Created: ' + result.filename;
                     document.getElementById('open-folder').style.display = 'inline-block';
                     document.getElementById('send-kindle').style.display = 'inline-block';
+                    if (loadedFromPending) {
+                        document.getElementById('clear-pending').style.display = 'inline-block';
+                    }
                 } else {
                     status.className = 'error';
                     status.textContent = 'Error: ' + result.error;
                     document.getElementById('open-folder').style.display = 'none';
                     document.getElementById('send-kindle').style.display = 'none';
+                    document.getElementById('clear-pending').style.display = 'none';
                 }
             } catch (err) {
                 status.className = 'error';
@@ -431,6 +437,50 @@ https://example.com/article3"></textarea>
                 await fetch('/open-folder', { method: 'POST' });
             } catch (err) {
                 console.error('Failed to open folder:', err);
+            }
+        }
+
+        async function loadPending() {
+            try {
+                const response = await fetch('/pending');
+                const result = await response.json();
+
+                if (result.success && result.urls && result.urls.length > 0) {
+                    const urls = result.urls.map(e => e.url).join('\n');
+                    document.getElementById('urls').value = urls;
+                    loadedFromPending = true;
+
+                    const status = document.getElementById('status');
+                    status.className = 'success';
+                    status.textContent = `Loaded ${result.urls.length} pending URL(s)`;
+                } else {
+                    const status = document.getElementById('status');
+                    status.className = 'error';
+                    status.textContent = 'No pending URLs';
+                }
+            } catch (err) {
+                console.error('Failed to load pending:', err);
+                const status = document.getElementById('status');
+                status.className = 'error';
+                status.textContent = 'Failed to load pending: ' + err.message;
+            }
+        }
+
+        async function clearPending() {
+            try {
+                const response = await fetch('/pending', { method: 'DELETE' });
+                const result = await response.json();
+
+                if (result.success) {
+                    loadedFromPending = false;
+                    document.getElementById('clear-pending').style.display = 'none';
+
+                    const status = document.getElementById('status');
+                    status.className = 'success';
+                    status.textContent = 'Pending cleared and archived to exported.json';
+                }
+            } catch (err) {
+                console.error('Failed to clear pending:', err);
             }
         }
 

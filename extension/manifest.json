@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Kindle Send - Add to Pending",
+  "version": "1.0",
+  "description": "Add current page URL to Kindle Send pending list",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "http://localhost:8080/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
