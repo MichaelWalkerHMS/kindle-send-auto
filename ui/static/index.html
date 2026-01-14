@@ -202,6 +202,12 @@
     <h1>Kindle Send</h1>
     <p class="subtitle">Paste URLs below (one per line) to convert to EPUB</p>
 
+    <div id="pending-counter" style="display: none; margin-bottom: 20px; padding: 12px; background: #e7f3ff; border-radius: 4px; border: 1px solid #b3d7ff;">
+        <strong id="pending-count">0</strong> manual article(s) pending
+        <button class="small secondary" onclick="viewManualArticles()" style="margin-left: 8px; margin-top: 0;">View</button>
+        <button class="small danger" onclick="clearManualArticles()" style="margin-left: 4px; margin-top: 0;">Clear</button>
+    </div>
+
     <label for="title">File Name (optional)</label>
     <input type="text" id="title" placeholder="my-ebook">
 
@@ -217,6 +223,24 @@ https://example.com/article3"></textarea>
     <button id="send-kindle" style="display: none;" onclick="window.open('https://www.amazon.com/sendtokindle', '_blank')">Send to Kindle</button>
     <button id="clear-pending" class="secondary" style="display: none;" onclick="clearPending()">Clear Pending</button>
 
+    <h2>Manual Article Entry</h2>
+    <div class="cookie-section">
+        <p style="margin-top: 0; margin-bottom: 16px; color: #666; font-size: 14px;">
+            For sites that require JavaScript (like Twitter/X), paste the content directly here.
+        </p>
+        <label for="manual-title">Article Title</label>
+        <input type="text" id="manual-title" placeholder="My Article Title">
+
+        <label for="manual-content">Content</label>
+        <textarea id="manual-content" placeholder="Paste the article content here..." style="height: 200px;"></textarea>
+
+        <label for="manual-source">Source URL (optional)</label>
+        <input type="text" id="manual-source" placeholder="https://x.com/user/status/123">
+
+        <button onclick="addManualArticle()">Add Article</button>
+        <div id="manual-status" style="margin-top: 12px; padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px;"></div>
+    </div>
+
     <h2>Cookie Management</h2>
     <div class="cookie-section">
         <div id="cookies-list"></div>
@@ -228,6 +252,114 @@ https://example.com/article3"></textarea>
     <script>
         let cookieData = {};
         let loadedFromPending = false;
+        let manualArticles = [];
+
+        // Manual article functions
+        async function loadManualArticles() {
+            try {
+                const response = await fetch('/manual');
+                const result = await response.json();
+                if (result.success) {
+                    manualArticles = result.articles || [];
+                    updatePendingCounter();
+                }
+            } catch (err) {
+                console.error('Failed to load manual articles:', err);
+            }
+        }
+
+        function updatePendingCounter() {
+            const counter = document.getElementById('pending-counter');
+            const countEl = document.getElementById('pending-count');
+            if (manualArticles.length > 0) {
+                counter.style.display = 'block';
+                countEl.textContent = manualArticles.length;
+            } else {
+                counter.style.display = 'none';
+            }
+        }
+
+        async function addManualArticle() {
+            const titleInput = document.getElementById('manual-title');
+            const contentInput = document.getElementById('manual-content');
+            const sourceInput = document.getElementById('manual-source');
+            const status = document.getElementById('manual-status');
+
+            const title = titleInput.value.trim();
+            const content = contentInput.value.trim();
+            const source = sourceInput.value.trim();
+
+            if (!title || !content) {
+                status.className = 'error';
+                status.style.display = 'block';
+                status.style.background = '#f8d7da';
+                status.style.color = '#721c24';
+                status.textContent = 'Title and content are required';
+                return;
+            }
+
+            try {
+                const response = await fetch('/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content, source })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    manualArticles = result.articles || [];
+                    updatePendingCounter();
+
+                    // Clear form
+                    titleInput.value = '';
+                    contentInput.value = '';
+                    sourceInput.value = '';
+
+                    // Show success
+                    status.style.display = 'block';
+                    status.style.background = '#d4edda';
+                    status.style.color = '#155724';
+                    status.textContent = `Article added! ${manualArticles.length} pending.`;
+                    setTimeout(() => { status.style.display = 'none'; }, 3000);
+                } else {
+                    status.style.display = 'block';
+                    status.style.background = '#f8d7da';
+                    status.style.color = '#721c24';
+                    status.textContent = 'Error: ' + result.error;
+                }
+            } catch (err) {
+                status.style.display = 'block';
+                status.style.background = '#f8d7da';
+                status.style.color = '#721c24';
+                status.textContent = 'Failed to add: ' + err.message;
+            }
+        }
+
+        function viewManualArticles() {
+            if (manualArticles.length === 0) {
+                alert('No manual articles pending');
+                return;
+            }
+            const titles = manualArticles.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+            alert('Pending manual articles:\n\n' + titles);
+        }
+
+        async function clearManualArticles() {
+            if (!confirm('Clear all pending manual articles?')) return;
+
+            try {
+                const response = await fetch('/manual', { method: 'DELETE' });
+                const result = await response.json();
+
+                if (result.success) {
+                    manualArticles = [];
+                    updatePendingCounter();
+                }
+            } catch (err) {
+                console.error('Failed to clear manual articles:', err);
+            }
+        }
 
         async function loadCookies() {
             try {
@@ -387,9 +519,9 @@ https://example.com/article3"></textarea>
                 .map(u => u.trim())
                 .filter(u => u.length > 0);
 
-            if (urls.length === 0) {
+            if (urls.length === 0 && manualArticles.length === 0) {
                 status.className = 'error';
-                status.textContent = 'Please enter at least one URL';
+                status.textContent = 'Please enter at least one URL or add a manual article';
                 return;
             }
 
@@ -417,6 +549,8 @@ https://example.com/article3"></textarea>
                     if (loadedFromPending) {
                         document.getElementById('clear-pending').style.display = 'inline-block';
                     }
+                    // Refresh manual articles counter (they get cleared after conversion)
+                    loadManualArticles();
                 } else {
                     status.className = 'error';
                     status.textContent = 'Error: ' + result.error;
@@ -484,8 +618,9 @@ https://example.com/article3"></textarea>
             }
         }
 
-        // Load cookies on page load
+        // Load cookies and manual articles on page load
         loadCookies();
+        loadManualArticles();
     </script>
 </body>
 </html>

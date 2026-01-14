@@ -24,6 +24,7 @@ var cookiesFilePath string
 var exportDirPath string
 var pendingFilePath string
 var exportedFilePath string
+var manualFilePath string
 
 type convertRequest struct {
 	URLs  []string `json:"urls"`
@@ -50,6 +51,26 @@ type pendingRequest struct {
 	URL string `json:"url"`
 }
 
+type manualArticle struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	Source  string `json:"source,omitempty"`
+	AddedAt string `json:"added_at"`
+}
+
+type manualRequest struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	Source  string `json:"source,omitempty"`
+}
+
+type manualResponse struct {
+	Success bool            `json:"success"`
+	Count   int             `json:"count"`
+	Articles []manualArticle `json:"articles,omitempty"`
+	Error   string          `json:"error,omitempty"`
+}
+
 type pendingResponse struct {
 	Success bool           `json:"success"`
 	URLs    []pendingEntry `json:"urls,omitempty"`
@@ -60,10 +81,11 @@ func StartServer(port int, exportDir string, cookiesFile string) error {
 	cookiesFilePath = cookiesFile
 	exportDirPath = exportDir
 
-	// Set pending and exported file paths
+	// Set pending, exported, and manual file paths
 	cwd, _ := os.Getwd()
 	pendingFilePath = filepath.Join(cwd, "pending.json")
 	exportedFilePath = filepath.Join(exportDir, "exported.json")
+	manualFilePath = filepath.Join(cwd, "manual-articles.json")
 
 	// Ensure export directory exists
 	if err := os.MkdirAll(exportDir, 0755); err != nil {
@@ -81,6 +103,7 @@ func StartServer(port int, exportDir string, cookiesFile string) error {
 	http.HandleFunc("/cookies", handleCookies)
 	http.HandleFunc("/open-folder", handleOpenFolder)
 	http.HandleFunc("/pending", handlePending)
+	http.HandleFunc("/manual", handleManual)
 
 	addr := fmt.Sprintf(":%d", port)
 	util.CyanBold.Printf("Starting server at http://localhost%s\n", addr)
@@ -108,22 +131,38 @@ func handleConvert(exportDir string) http.HandlerFunc {
 			return
 		}
 
-		if len(req.URLs) == 0 {
+		// Get manual articles
+		manualArticles := loadManualArticles()
+		var epubManualArticles []epubgen.ManualArticle
+		for _, m := range manualArticles {
+			epubManualArticles = append(epubManualArticles, epubgen.ManualArticle{
+				Title:   m.Title,
+				Content: m.Content,
+				Source:  m.Source,
+			})
+		}
+
+		if len(req.URLs) == 0 && len(epubManualArticles) == 0 {
 			json.NewEncoder(w).Encode(convertResponse{
 				Success: false,
-				Error:   "No URLs provided",
+				Error:   "No URLs or manual articles provided",
 			})
 			return
 		}
 
-		// Generate EPUB with optional title
-		epubPath, err := epubgen.MakeToDir(req.URLs, req.Title, exportDir)
+		// Generate EPUB with URLs and manual articles
+		epubPath, err := epubgen.MakeToDirWithManual(req.URLs, epubManualArticles, req.Title, exportDir)
 		if err != nil {
 			json.NewEncoder(w).Encode(convertResponse{
 				Success: false,
 				Error:   err.Error(),
 			})
 			return
+		}
+
+		// Clear manual articles after successful conversion
+		if len(manualArticles) > 0 {
+			saveManualArticles([]manualArticle{})
 		}
 
 		filename := filepath.Base(epubPath)
@@ -414,4 +453,112 @@ func saveExportedEntries(entries []pendingEntry) error {
 		return err
 	}
 	return os.WriteFile(exportedFilePath, data, 0644)
+}
+
+func handleManual(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		// Return manual articles
+		articles := loadManualArticles()
+		json.NewEncoder(w).Encode(manualResponse{
+			Success:  true,
+			Count:    len(articles),
+			Articles: articles,
+		})
+
+	case http.MethodPost:
+		// Add manual article
+		var req manualRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			json.NewEncoder(w).Encode(manualResponse{
+				Success: false,
+				Error:   "Invalid request body",
+			})
+			return
+		}
+
+		if req.Title == "" || req.Content == "" {
+			json.NewEncoder(w).Encode(manualResponse{
+				Success: false,
+				Error:   "Title and content are required",
+			})
+			return
+		}
+
+		articles := loadManualArticles()
+		articles = append(articles, manualArticle{
+			Title:   req.Title,
+			Content: req.Content,
+			Source:  req.Source,
+			AddedAt: time.Now().Format(time.RFC3339),
+		})
+
+		if err := saveManualArticles(articles); err != nil {
+			json.NewEncoder(w).Encode(manualResponse{
+				Success: false,
+				Error:   "Failed to save: " + err.Error(),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(manualResponse{
+			Success:  true,
+			Count:    len(articles),
+			Articles: articles,
+		})
+
+	case http.MethodDelete:
+		// Clear manual articles
+		if err := saveManualArticles([]manualArticle{}); err != nil {
+			json.NewEncoder(w).Encode(manualResponse{
+				Success: false,
+				Error:   "Failed to clear: " + err.Error(),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(manualResponse{
+			Success:  true,
+			Count:    0,
+			Articles: []manualArticle{},
+		})
+
+	default:
+		json.NewEncoder(w).Encode(manualResponse{
+			Success: false,
+			Error:   "Method not allowed",
+		})
+	}
+}
+
+func loadManualArticles() []manualArticle {
+	data, err := os.ReadFile(manualFilePath)
+	if err != nil {
+		return []manualArticle{}
+	}
+	var articles []manualArticle
+	if err := json.Unmarshal(data, &articles); err != nil {
+		return []manualArticle{}
+	}
+	return articles
+}
+
+func saveManualArticles(articles []manualArticle) error {
+	data, err := json.MarshalIndent(articles, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(manualFilePath, data, 0644)
+}
+
+// GetManualArticles returns the current manual articles (for use by epubgen)
+func GetManualArticles() []manualArticle {
+	return loadManualArticles()
+}
+
+// ClearManualArticles clears all manual articles
+func ClearManualArticles() error {
+	return saveManualArticles([]manualArticle{})
 }

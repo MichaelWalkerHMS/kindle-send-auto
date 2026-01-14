@@ -5,4 +5,5 @@ exports/*.epub
 exports/exported.json
 cookies.json
 pending.json
+manual-articles.json
 kindle-send-auto
