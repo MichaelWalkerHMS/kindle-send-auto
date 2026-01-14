@@ -13,7 +13,9 @@ A web UI and browser extension for converting web articles to EPUB for e-readers
 | **Web UI** | Browser-based interface at `localhost:8080` for converting URLs to EPUB |
 | **Cookie Authentication** | Access paywalled content (Substack, etc.) using your browser session |
 | **Pending Queue** | Save URLs while browsing, convert them later in batch |
-| **Chrome Extension** | One-click add current page to pending queue |
+| **Chrome Extension** | Add URLs to queue, or extract content from JS-heavy sites like Twitter/X |
+| **Manual Article Entry** | Paste content directly for sites that can't be fetched |
+| **Image Compression** | Auto-resize and compress images for smaller EPUB files |
 | **Local-only** | All data stays on your machine — no cloud, no external servers |
 
 ---
@@ -66,15 +68,39 @@ For paywalled content, add your session cookies in the **Cookie Management** sec
 
 Cookies are stored locally in `cookies.json` (git-ignored).
 
-### Pending Queue & Chrome Extension
+### Chrome Extension
 
-**While browsing:**
+The extension provides two ways to save content:
+
+**Add URL to Pending** (for most sites):
 1. Click the extension icon on any page
-2. Click **Add to Pending**
+2. Click **Add URL to Pending**
+3. Later, open the web UI and click **Load Pending**
+
+**Extract Page Content** (for JS-heavy sites like Twitter/X):
+1. Navigate to the content you want (e.g., a Twitter thread)
+2. Click the extension icon
+3. Optionally edit the title
+4. Click **Extract Page Content**
+
+The extractor walks the page DOM to capture text and images in their original positions. For Twitter, it automatically filters out metadata (likes, retweets, timestamps, etc.).
+
+### Manual Article Entry
+
+For content that can't be extracted automatically:
+
+1. Open the web UI
+2. Scroll to **Manual Article Entry**
+3. Paste the title, content (plain text or HTML), and optionally the source URL
+4. Click **Add Article**
+5. The pending counter shows how many manual articles are queued
+6. Click **Convert** to generate the EPUB
+
+### Pending Queue
 
 **When ready to convert:**
 1. Open the web UI
-2. Click **Load Pending** to fill the URL list
+2. Click **Load Pending** to fill the URL list (if using URL queue)
 3. Convert to EPUB
 4. Click **Clear Pending** to archive URLs to `exports/exported.json`
 
@@ -112,6 +138,7 @@ For send functionality, you'll need to configure email settings on first run.
 |------|---------|
 | `cookies.json` | Your session cookies (git-ignored) |
 | `pending.json` | URLs waiting to be converted (git-ignored) |
+| `manual-articles.json` | Manually entered/extracted articles (git-ignored) |
 | `exports/` | Generated EPUB files |
 | `exports/exported.json` | Archive of converted URLs (git-ignored) |
 
