@@ -2,6 +2,7 @@ package epubgen
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	htmlutil "html"
 	"image"
@@ -165,21 +166,14 @@ func downloadAndCompressImage(imgURL string) (string, error) {
 		finalImg = img
 	}
 
-	// Create temp file for the compressed image
-	tmpFile, err := os.CreateTemp("", "kindle-img-*.jpg")
-	if err != nil {
-		return "", err
-	}
-	defer tmpFile.Close()
-
-	// Encode as JPEG with compression
-	err = jpeg.Encode(tmpFile, finalImg, &jpeg.Options{Quality: jpegQuality})
-	if err != nil {
-		os.Remove(tmpFile.Name())
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, finalImg, &jpeg.Options{Quality: jpegQuality}); err != nil {
 		return "", err
 	}
 
-	return tmpFile.Name(), nil
+	// go-epub reads image sources lazily at Write time, so a temp file would have to outlive
+	// this call; a data URL keeps the bytes with the epub instead.
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
 // Download images and add to epub zip
@@ -198,25 +192,16 @@ func (e *epubmaker) downloadImages(i int, img *goquery.Selection) {
 		//use murmur hash to generate file name
 		imageFileName := util.GetHash(imgSrc) + ".jpg"
 
-		// Download and compress the image
-		tmpPath, err := downloadAndCompressImage(imgSrc)
+		dataURL, err := downloadAndCompressImage(imgSrc)
 		if err != nil {
 			util.Red.Printf("Couldn't download/compress image %s : %s\n", imgSrc, err)
 			return
 		}
 
-		// Get file size for logging before adding
-		var sizeKB int64
-		if fi, err := os.Stat(tmpPath); err == nil {
-			sizeKB = fi.Size() / 1024
-		}
+		// base64 inflates by 4/3
+		sizeKB := int64(len(dataURL)) * 3 / 4 / 1024
 
-		// Add the compressed image to the epub using file:// URL scheme
-		imgRef, err := e.Epub.AddImage("file://"+tmpPath, imageFileName)
-
-		// Clean up temp file after adding
-		os.Remove(tmpPath)
-
+		imgRef, err := e.Epub.AddImage(dataURL, imageFileName)
 		if err != nil {
 			util.Red.Printf("Couldn't add image %s : %s\n", imgSrc, err)
 			return

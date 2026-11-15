@@ -457,6 +457,15 @@ func saveExportedEntries(entries []pendingEntry) error {
 
 func handleManual(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// Firefox MV3 treats host_permissions as opt-in, so the extension can't rely on them to bypass CORS
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
