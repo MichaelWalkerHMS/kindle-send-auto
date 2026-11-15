@@ -15,6 +15,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/nikhil1raghav/kindle-send/util"
 	"golang.org/x/image/draw"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // httpClient is used for fetching URLs. Can be set with SetHTTPClient to include cookies.
@@ -80,13 +83,157 @@ func fetchReadable(pageURL string) (readability.Article, error) {
 		return readability.Article{}, err
 	}
 
-	return readability.FromReader(resp.Body, parsedURL)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return readability.Article{}, err
+	}
+
+	article, err := readability.FromReader(bytes.NewReader(body), parsedURL)
+	if err != nil {
+		return article, err
+	}
+
+	// Readability discards footnote sections, so note text is recovered from the original page
+	if rawDoc, err := goquery.NewDocumentFromReader(bytes.NewReader(body)); err == nil {
+		addFootnotes(&article, rawDoc)
+	}
+	return article, nil
+}
+
+var footnoteMarker = regexp.MustCompile(`^[\[(]?([0-9]{1,3}|[*†‡§]+)[\])]?$`)
+
+// addFootnotes turns in-page footnote references into EPUB3 noteref/footnote pairs, which
+// Kindle shows as popup notes. The two-way links are what older Kindle firmware keys on.
+func addFootnotes(article *readability.Article, rawDoc *goquery.Document) {
+	if article.Node == nil {
+		return
+	}
+	content := goquery.NewDocumentFromNode(article.Node)
+	seen := make(map[string]bool)
+	var notes strings.Builder
+
+	content.Find(`a[href^="#"]`).Each(func(i int, ref *goquery.Selection) {
+		marker := strings.TrimSpace(ref.Text())
+		if !footnoteMarker.MatchString(marker) {
+			return
+		}
+		href, _ := ref.Attr("href")
+		targetID := strings.TrimPrefix(href, "#")
+		// Attribute selectors avoid CSS-escaping ids like "fn:1"; quotes would break them
+		if targetID == "" || strings.ContainsAny(targetID, `"\`) {
+			return
+		}
+		idSelector := `[id="` + targetID + `"]`
+
+		if content.Find(idSelector).Length() > 0 {
+			ref.SetAttr("epub:type", "noteref")
+			return
+		}
+		if seen[targetID] {
+			ref.SetAttr("epub:type", "noteref")
+			return
+		}
+
+		target := rawDoc.Find(idSelector).First()
+		if target.Length() == 0 {
+			return
+		}
+		// Substack puts the id on the note's number link; the note text is its parent
+		if goquery.NodeName(target) == "a" {
+			target = target.Parent()
+		}
+		note := target.Clone()
+		note.Find(`a[href^="#"]`).Remove()
+		if strings.TrimSpace(note.Text()) == "" {
+			return
+		}
+
+		refID, ok := ref.Attr("id")
+		if !ok || refID == "" {
+			refID = "noteref-" + targetID
+			ref.SetAttr("id", refID)
+		}
+		ref.SetAttr("epub:type", "noteref")
+		ref.RemoveAttr("target")
+		if goquery.NodeName(ref.Parent()) != "sup" {
+			ref.WrapNode(&html.Node{Type: html.ElementNode, Data: "sup", DataAtom: atom.Sup})
+		}
+
+		backlink := `<a href="#` + htmlutil.EscapeString(refID) + `">` + htmlutil.EscapeString(marker) + `</a> `
+		if p := note.Find("p").First(); p.Length() > 0 {
+			p.PrependHtml(backlink)
+		} else {
+			note.PrependHtml(backlink)
+		}
+		noteHTML, err := note.Html()
+		if err != nil {
+			return
+		}
+
+		seen[targetID] = true
+		notes.WriteString(`<aside epub:type="footnote" id="` + htmlutil.EscapeString(targetID) + `">` + noteHTML + `</aside>`)
+	})
+
+	if notes.Len() == 0 {
+		return
+	}
+	// Readability's nodes lack DataAtom, which makes goquery's AppendHtml panic when it uses
+	// them as a parse context, so the notes are parsed separately and moved in as nodes.
+	notesDoc, err := goquery.NewDocumentFromReader(strings.NewReader(`<hr/>` + notes.String()))
+	if err != nil {
+		return
+	}
+	content.Selection.AppendSelection(notesDoc.Find("body").Contents())
+	if rendered, err := content.Html(); err == nil {
+		article.Content = rendered
+	}
+}
+
+// Download the highest-resolution srcset candidate rather than the (often small) src
+func promoteLargestSrcset(i int, img *goquery.Selection) {
+	srcset, ok := img.Attr("srcset")
+	if !ok {
+		return
+	}
+	bestURL, bestWidth := "", 0
+	// Substack-style URLs contain commas, so candidates are split on ", " rather than ","
+	for _, candidate := range strings.Split(srcset, ", ") {
+		fields := strings.Fields(strings.TrimSpace(candidate))
+		if len(fields) != 2 || !strings.HasSuffix(fields[1], "w") {
+			continue
+		}
+		width, err := strconv.Atoi(strings.TrimSuffix(fields[1], "w"))
+		if err == nil && width > bestWidth {
+			bestURL, bestWidth = fields[0], width
+		}
+	}
+	if bestURL != "" {
+		img.SetAttr("src", bestURL)
+	}
+}
+
+// Kindle only opens its image zoom view for images that aren't links, and it can't load
+// <source> entries that still point at remote (often WebP) files.
+func unwrapImages(doc *goquery.Document) {
+	doc.Find("picture").Each(func(i int, p *goquery.Selection) {
+		p.Find("source").Remove()
+		p.ReplaceWithSelection(p.Contents())
+	})
+	doc.Find("a").Each(func(i int, a *goquery.Selection) {
+		if a.Find("img").Length() > 0 {
+			a.ReplaceWithSelection(a.Contents())
+		}
+	})
+	// Fixed pixel sizes from the web layout stop the reader scaling images to the screen
+	doc.Find("img").RemoveAttr("width").RemoveAttr("height").RemoveAttr("sizes").RemoveAttr("style")
 }
 
 // Point remote image link to downloaded image
 func (e *epubmaker) changeRefs(i int, img *goquery.Selection) {
 	img.RemoveAttr("loading")
 	img.RemoveAttr("srcset")
+	img.RemoveAttr("decoding")
+	img.RemoveAttr("fetchpriority")
 	imgSrc, exists := img.Attr("src")
 	if exists {
 		if _, ok := e.downloads[imgSrc]; ok {
@@ -96,11 +243,12 @@ func (e *epubmaker) changeRefs(i int, img *goquery.Selection) {
 	}
 }
 
-// Image compression settings
+// Image compression settings. Bounds leave zoom headroom above current Kindle screens
+// (Paperwhite 1236x1648, Scribe 1860x2480).
 const (
-	maxImageWidth  = 800  // Max width for Kindle readability
-	maxImageHeight = 1200 // Max height
-	jpegQuality    = 75   // JPEG quality (1-100)
+	maxImageWidth  = 1800
+	maxImageHeight = 2400
+	jpegQuality    = 90
 )
 
 // downloadAndCompressImage downloads an image, resizes if needed, and compresses as JPEG
@@ -219,11 +367,15 @@ func (e *epubmaker) embedImages(wg *sync.WaitGroup, article *readability.Article
 	//TODO: Compress images before embedding to improve size
 	doc := goquery.NewDocumentFromNode(article.Node)
 
+	doc.Find("img").Each(promoteLargestSrcset)
+
 	//download all images
 	doc.Find("img").Each(e.downloadImages)
 
 	//Change all refs, doing it in two phases to download repeated images only once
 	doc.Find("img").Each(e.changeRefs)
+
+	unwrapImages(doc)
 
 	content, err := doc.Html()
 
@@ -236,7 +388,7 @@ func (e *epubmaker) embedImages(wg *sync.WaitGroup, article *readability.Article
 
 // TODO: Look for better formatting, this is bare bones
 func prepare(article *readability.Article) string {
-	return "<h1>" + article.Title + "</h1>" + article.Content
+	return "<h1>" + htmlutil.EscapeString(article.Title) + "</h1>" + article.Content
 }
 
 // Add articles to epub
