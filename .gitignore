@@ -8,3 +8,8 @@ pending.json
 manual-articles.json
 kindle-send-auto
 kindle-send-auto.exe
+kindle-send.zip
+*.xpi
+safari/**/xcuserdata/
+safari/**/*.xcuserstate
+safari/build/

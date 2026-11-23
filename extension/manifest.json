@@ -1,19 +1,33 @@
 {
   "manifest_version": 3,
-  "name": "Kindle Send - Add to Pending",
-  "version": "1.1",
-  "description": "Add current page URL to Kindle Send pending list, or extract page content",
-  "permissions": ["activeTab", "scripting"],
-  "host_permissions": [
-    "http://localhost:8080/*"
-  ],
+  "name": "Kindle Send",
+  "version": "2.1.0",
+  "description": "Save web articles and build Kindle-ready EPUBs with full-resolution images and popup footnotes.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage", "downloads"],
+  "host_permissions": ["<all_urls>"],
   "action": {
-    "default_popup": "popup.html"
+    "default_title": "Kindle Send",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
   },
   "browser_specific_settings": {
     "gecko": {
       "id": "kindle-send-auto@local",
-      "strict_min_version": "115.0"
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }

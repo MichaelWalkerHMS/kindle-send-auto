@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kindle Send queue</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    #items {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    #items li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }
+    #items li:first-child {
+      border-top: none;
+    }
+    #items li.empty {
+      color: var(--muted);
+      justify-content: center;
+    }
+    .item-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .item-title {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .item-url {
+      font-size: 12px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--muted);
+      margin-left: 6px;
+      font-weight: normal;
+    }
+    .remove {
+      padding: 2px 8px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .row input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+    }
+    label.check {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      font-size: 13px;
+    }
+    details {
+      margin-top: 24px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+    details > *:not(summary) {
+      margin-top: 8px;
+    }
+    #log {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--surface);
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    #log:empty {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Kindle Send queue</h1>
+    <ul id="items"></ul>
+
+    <h2>Build EPUB</h2>
+    <div class="row">
+      <input type="text" id="book-title" placeholder="Book title (defaults to the article title)">
+      <button id="build-btn" class="primary">Build EPUB</button>
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="remove-after" checked> Remove built items from the queue</label>
+    </div>
+    <p class="hint">
+      The file goes to your Downloads folder. Upload it at
+      <a href="https://www.amazon.com/sendtokindle" target="_blank" rel="noopener">amazon.com/sendtokindle</a>.
+    </p>
+    <div id="status" class="status" role="status"></div>
+    <pre id="log"></pre>
+
+    <details>
+      <summary>Add links</summary>
+      <textarea id="links" rows="4" placeholder="One URL per line"></textarea>
+      <button id="add-links-btn">Add links</button>
+      <p class="hint">Links are downloaded when you build. For paywalled or app-like pages, open the page and use <strong>Save article</strong> in the toolbar popup instead.</p>
+    </details>
+
+    <details>
+      <summary>Paste an article</summary>
+      <input type="text" id="manual-title" placeholder="Title">
+      <input type="url" id="manual-source" placeholder="Source URL (optional)">
+      <textarea id="manual-content" rows="8" placeholder="Article text or HTML"></textarea>
+      <button id="add-manual-btn">Add article</button>
+    </details>
+  </main>
+
+  <script src="lib/Readability.js"></script>
+  <script src="article.js"></script>
+  <script src="epub.js"></script>
+  <script src="queue-store.js"></script>
+  <script src="queue.js"></script>
+</body>
+</html>

@@ -1,115 +1,92 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  const urlDiv = document.getElementById('url');
-  const addBtn = document.getElementById('add-btn');
-  const extractBtn = document.getElementById('extract-btn');
-  const titleInput = document.getElementById('title-input');
+(async () => {
+  'use strict';
+
+  const { api } = KindleQueue;
+  const TWITTER_HOST = /(^|\.)(twitter|x)\.com$/;
+
+  const pageTitle = document.getElementById('page-title');
+  const saveBtn = document.getElementById('save-btn');
+  const linkBtn = document.getElementById('link-btn');
+  const queueBtn = document.getElementById('queue-btn');
+  const count = document.getElementById('count');
   const status = document.getElementById('status');
 
-  // Get current tab URL
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const url = tab.url;
-
-  urlDiv.textContent = url;
-
-  // Pre-fill title from page title
-  titleInput.value = tab.title || '';
-
-  function showStatus(type, message) {
-    status.className = type;
+  function showStatus(kind, message) {
+    status.className = 'status ' + kind;
     status.textContent = message;
   }
 
-  // Add URL to pending (existing functionality)
-  addBtn.addEventListener('click', async () => {
-    addBtn.disabled = true;
-    addBtn.textContent = 'Adding...';
+  function showCount(n) {
+    count.textContent = n === 1 ? '1 item queued' : n + ' items queued';
+  }
 
+  const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+  const isWebPage = /^https?:/.test(tab.url || '');
+  pageTitle.textContent = tab.title || tab.url;
+  showCount((await KindleQueue.load()).length);
+
+  if (!isWebPage) {
+    saveBtn.disabled = true;
+    linkBtn.disabled = true;
+    // Safari hides the tab's URL until the extension is allowed on that site
+    showStatus(
+      'error',
+      tab.url
+        ? 'Open a web article to save it.'
+        : 'Kindle Send can\'t see this page yet. Allow it on this website (in Safari, Settings → Extensions → Kindle Send), then reopen this popup.'
+    );
+  }
+
+  async function extractFromPage() {
+    const target = { tabId: tab.id };
+    if (TWITTER_HOST.test(new URL(tab.url).hostname)) {
+      const [injection] = await api.scripting.executeScript({ target, files: ['twitter.js'] });
+      const tweet = injection && injection.result;
+      if (!tweet || !tweet.content) throw new Error('No posts found on this page');
+      return { title: tweet.title, html: tweet.content, url: tab.url, byline: '', siteName: 'X' };
+    }
+
+    await api.scripting.executeScript({ target, files: ['lib/Readability.js', 'article.js'] });
+    // Errors are returned rather than thrown: Chrome drops exceptions from injected functions
+    const [injection] = await api.scripting.executeScript({
+      target,
+      func: () => {
+        try {
+          return KindleArticle.extract(document, location.href);
+        } catch (e) {
+          return { error: e.message };
+        }
+      },
+    });
+    const article = injection && injection.result;
+    if (!article) throw new Error('Could not read this page');
+    if (article.error) throw new Error(article.error);
+    return article;
+  }
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
     try {
-      const response = await fetch('http://localhost:8080/pending', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ url: url })
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        showStatus('success', 'Added to pending!');
-        addBtn.textContent = 'Added!';
-      } else {
-        showStatus('error', result.error || 'Failed to add');
-        addBtn.textContent = 'Add URL to Pending';
-        addBtn.disabled = false;
-      }
-    } catch (err) {
-      if (err.message.includes('Failed to fetch')) {
-        showStatus('error', 'Server not running. Start kindle-send-auto ui first.');
-      } else {
-        showStatus('error', 'Error: ' + err.message);
-      }
-      addBtn.textContent = 'Add URL to Pending';
-      addBtn.disabled = false;
+      const article = await extractFromPage();
+      showCount(await KindleQueue.add({ kind: 'article', ...article }));
+      showStatus('ok', 'Saved "' + article.title + '"');
+      saveBtn.textContent = 'Saved';
+    } catch (e) {
+      showStatus('error', e.message + '. Try "Queue link only" instead.');
+      saveBtn.textContent = 'Save article';
+      saveBtn.disabled = false;
     }
   });
 
-  // Extract page content
-  extractBtn.addEventListener('click', async () => {
-    extractBtn.disabled = true;
-    extractBtn.textContent = 'Extracting...';
-
-    try {
-      // Inject content script to extract page content
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-
-      if (!results || results.length === 0 || !results[0].result) {
-        throw new Error('Failed to extract content from page');
-      }
-
-      const extracted = results[0].result;
-
-      if (!extracted.content || extracted.content.trim().length === 0) {
-        throw new Error('No content found on page');
-      }
-
-      // Use custom title if provided, otherwise use extracted title
-      const title = titleInput.value.trim() || extracted.title || 'Untitled';
-
-      // Send to manual article endpoint
-      const response = await fetch('http://localhost:8080/manual', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          title: title,
-          content: extracted.content,
-          source: url
-        })
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        showStatus('success', `Extracted! (${extracted.imageCount || 0} images)`);
-        extractBtn.textContent = 'Extracted!';
-      } else {
-        showStatus('error', result.error || 'Failed to save');
-        extractBtn.textContent = 'Extract Page Content';
-        extractBtn.disabled = false;
-      }
-    } catch (err) {
-      if (err.message.includes('Failed to fetch')) {
-        showStatus('error', 'Server not running. Start kindle-send-auto ui first.');
-      } else {
-        showStatus('error', err.message);
-      }
-      extractBtn.textContent = 'Extract Page Content';
-      extractBtn.disabled = false;
-    }
+  linkBtn.addEventListener('click', async () => {
+    linkBtn.disabled = true;
+    showCount(await KindleQueue.add({ kind: 'url', url: tab.url, title: tab.title || tab.url }));
+    showStatus('ok', 'Link queued');
   });
-});
+
+  queueBtn.addEventListener('click', async () => {
+    await api.tabs.create({ url: api.runtime.getURL('queue.html') });
+    window.close();
+  });
+})();
