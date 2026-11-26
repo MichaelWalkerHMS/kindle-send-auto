@@ -14,7 +14,7 @@
   const XHTML_NS = 'http://www.w3.org/1999/xhtml';
   const REMOVED_ELEMENTS =
     'script, style, noscript, iframe, form, input, button, select, textarea, svg, video, audio, ' +
-    'object, embed, canvas, source, template, link, meta';
+    'object, embed, canvas, source, template, link, meta, title';
   // An allowlist keeps the output valid XML: pages carry attribute names like "@click"
   // or ":class" that XMLSerializer would emit verbatim and break the file.
   const KEPT_ATTRIBUTES = new Set([

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kindle Send",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Save web articles and build Kindle-ready EPUBs with full-resolution images and popup footnotes.",
   "icons": {
     "16": "icons/icon-16.png",

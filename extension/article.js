@@ -10,7 +10,11 @@
     if (typeof Readability === 'undefined') {
       throw new Error('Readability is not loaded');
     }
-    const parsed = new Readability(doc.cloneNode(true)).parse();
+    // Cloned so the live page is never modified; Readability mutates its input, hence a
+    // second clone, keeping `source` intact for footnote lookups.
+    const source = doc.cloneNode(true);
+    resolveStreamedContent(source);
+    const parsed = new Readability(source.cloneNode(true)).parse();
     if (!parsed || !parsed.content) {
       throw new Error('Could not find article content on this page');
     }
@@ -21,7 +25,7 @@
     const container = work.createElement('div');
     container.innerHTML = parsed.content;
 
-    addFootnotes(container, doc, url);
+    addFootnotes(container, source, url);
     container.querySelectorAll('img').forEach((img) => promoteLargestSrcset(img, url));
 
     return {
@@ -31,6 +35,68 @@
       url,
       html: container.innerHTML,
     };
+  }
+
+  // React streaming server rendering (Next.js, LessWrong) sends page content in hidden
+  // <div hidden id="S:n"> chunks and relies on inline scripts to move each into its
+  // <template> placeholder: $RC("B:x","S:y") completes a loading boundary, $RS("S:y","P:x")
+  // fills a plain slot. Fetched pages never run those scripts and Readability skips hidden
+  // elements, so without this the article comes out empty.
+  function resolveStreamedContent(doc) {
+    const swaps = [];
+    for (const script of Array.from(doc.querySelectorAll('script:not([src])'))) {
+      for (const m of script.textContent.matchAll(/\$R([CS])\("([^"]+)","([^"]+)"/g)) {
+        if (m[1] === 'C') swaps.push({ placeholderId: m[2], chunkId: m[3], boundary: true });
+        else swaps.push({ placeholderId: m[3], chunkId: m[2], boundary: false });
+      }
+    }
+    // Pages whose scripts use other names still number chunks and placeholders alike
+    if (!swaps.length) {
+      for (const chunk of Array.from(doc.querySelectorAll('div[hidden][id^="S:"]'))) {
+        const n = chunk.id.slice(2);
+        swaps.push({ placeholderId: 'B:' + n, chunkId: chunk.id, boundary: true });
+        swaps.push({ placeholderId: 'P:' + n, chunkId: chunk.id, boundary: false });
+      }
+    }
+
+    let pending = swaps;
+    // A chunk can carry placeholders for chunks listed before it, so repeat until stuck
+    while (pending.length) {
+      const stuck = [];
+      for (const swap of pending) {
+        const chunk = doc.getElementById(swap.chunkId);
+        const placeholder = doc.getElementById(swap.placeholderId);
+        if (!chunk) continue;
+        if (!placeholder || placeholder.tagName !== 'TEMPLATE') {
+          stuck.push(swap);
+          continue;
+        }
+        if (swap.boundary) removeBoundaryFallback(placeholder);
+        placeholder.replaceWith(...Array.from(chunk.childNodes));
+        chunk.remove();
+      }
+      if (stuck.length === pending.length) break;
+      pending = stuck;
+    }
+  }
+
+  // A boundary's loading fallback sits between its placeholder and the matching <!--/$-->
+  function removeBoundaryFallback(placeholder) {
+    let depth = 0;
+    let node = placeholder.nextSibling;
+    while (node) {
+      const next = node.nextSibling;
+      if (node.nodeType === Node.COMMENT_NODE) {
+        if (node.data === '/$') {
+          if (depth === 0) return;
+          depth--;
+        } else if (node.data.startsWith('$')) {
+          depth++;
+        }
+      }
+      node.remove();
+      node = next;
+    }
   }
 
   function stripHash(href) {
@@ -72,7 +138,7 @@
   function markReference(ref) {
     ref.setAttribute('epub:type', 'noteref');
     ref.removeAttribute('target');
-    if (ref.parentElement && ref.parentElement.tagName !== 'SUP') {
+    if (ref.parentElement && !ref.closest('sup')) {
       const sup = ref.ownerDocument.createElement('sup');
       ref.replaceWith(sup);
       sup.append(ref);
