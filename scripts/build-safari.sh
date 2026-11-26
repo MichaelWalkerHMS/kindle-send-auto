@@ -27,3 +27,12 @@ xcrun "$TOOL" extension \
   --swift \
   --no-prompt \
   --force
+
+# Newer Xcode derives the app's identifier from the app name ("Kindle-Send") instead of
+# --bundle-identifier, while the extension gets "$BUNDLE_ID.Extension". Safari requires the
+# extension's identifier to start with the app's, so set the app's identifier back to $BUNDLE_ID.
+for f in "safari/Kindle Send/Kindle Send.xcodeproj/project.pbxproj" \
+         "safari/Kindle Send/Kindle Send.xcodeproj/project.xcproj"; do
+  [ -f "$f" ] && sed -i '' "s/$(echo "$BUNDLE_ID" | sed 's/KindleSend$/Kindle-Send/')\([\";]\)/$BUNDLE_ID\1/g" "$f"
+done
+exit 0
